@@ -8,7 +8,7 @@ from ...registry import ScraperRegistry
 from ...schemas import CourseEntry
 
 
-@ScraperRegistry.register("Daystar")
+@ScraperRegistry.register("school_exams")
 class SchoolExamScraper(BaseTimetableScraper):
     """
     Scraper for Daystar Univesity Exams
@@ -18,7 +18,7 @@ class SchoolExamScraper(BaseTimetableScraper):
 
     @property
     def institution_name(self) -> str:
-        return "Daystar University"
+        return "school_exams"
 
     def extract(self, file) -> List[CourseEntry]:
         """Extract exam timetable data from school Excel file."""

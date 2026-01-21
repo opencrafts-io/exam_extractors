@@ -48,4 +48,4 @@ class BaseTimetableScraper(ABC):
         for entry in entries:
             if self.validate_entry(entry):
                 normalized.append(entry)
-            return normalized
+        return normalized

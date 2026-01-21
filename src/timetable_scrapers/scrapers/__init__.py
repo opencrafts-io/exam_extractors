@@ -1,6 +1,6 @@
-from .daystar.scraper import SchoolExamScraper
+from .school.exam_scraper import SchoolExamScraper
 from .kca.scraper import KCAScraper
-from .nursing.scraper import NursingExamScraper
+from .nursing.exam_scraper import NursingExamScraper
 from .strath.scraper import StrathScraper
 
 __all__ = [

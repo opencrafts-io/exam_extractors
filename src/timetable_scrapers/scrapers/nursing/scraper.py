@@ -8,7 +8,7 @@ from ...schemas import CourseEntry
 from ...utils.datetime_parser import compute_datetime_str
 
 
-@ScraperRegistry.register("nursing")
+@ScraperRegistry.register("nursing_exams")
 class NursingExamScraper(BaseTimetableScraper):
     """
     Scraper for Daystar University Nursing timetable Format
@@ -16,7 +16,7 @@ class NursingExamScraper(BaseTimetableScraper):
 
     @property
     def institution_name(self) -> str:
-        return "Daystar Nursing Exams"
+        return "nursing_exams"
 
     def extract(self, file) -> List[CourseEntry]:
         """
@@ -41,12 +41,14 @@ class NursingExamScraper(BaseTimetableScraper):
 
         column_data_dict = self._read_columns(sheet, column_headers)
         morning_exams = self._extract_course_info(
-            column_data_dict, "Courses", ["8.30AM-11.30AM", "8.30-11.30AM"]
+            column_data_dict,
+            "Courses",
+            ["8.30AM-11.30AM", "8.30-11.30AM", "8.30-11.30 AM"],
         )
         afternoon_exams = self._extract_course_info(
             column_data_dict,
             "Courses_Afternoon",
-            ["1.30PM-4.30PM", "1.30-4.30PM"],
+            ["1.30PM-4.30PM", "1.30-4.30PM", "1.30-4.30 PM"],
         )
 
         courses = morning_exams + afternoon_exams
@@ -101,43 +103,42 @@ class NursingExamScraper(BaseTimetableScraper):
             return courses
 
         for i in range(len(column_data_dict["Day"])):
-            course_code = column_data_dict[time_key][i]
+            raw_course_code = column_data_dict[time_key][i]
+            if raw_course_code is None:
+                continue
 
-            if (
-                course_code not in time_range
-                and course_code not in existing_course_codes
-            ):
-                day_val = column_data_dict["Day"][i]
-                time_val = (
-                    "8:30AM-11:30AM"
-                    if "8.30" in time_range[0]
-                    else "1:30PM-4:30PM"
-                )
-                suffix = "_Afternoon" if "_Afternoon" in time_key else ""
-                course_info = course_info = CourseEntry(
-                    course_code=column_data_dict[time_key][i].strip(),
-                    coordinator=column_data_dict.get(
-                        "Coordinator", [""] * (i + 1)
-                    )[i]
-                    or "",
-                    time=time_val,
-                    day=day_val or "",
-                    campus=column_data_dict.get("Campus", [""] * (i + 1))[i]
-                    or "",
-                    hrs=column_data_dict.get(f"Hours{suffix}", [""] * (i + 1))[
-                        i
-                    ]
-                    or "",
-                    venue=column_data_dict.get(
-                        f"Venue{suffix}", [""] * (i + 1)
-                    )[i]
-                    or "",
-                    invigilator=column_data_dict.get(
-                        f"Invigilators{suffix}", [""] * (i + 1)
-                    )[i]
-                    or "",
-                    datetime_str=compute_datetime_str(day_val, time_val),
-                )
+            course_code = str(raw_course_code).strip()
+            if not course_code:
+                continue
+            if course_code in time_range:
+                continue
+            if course_code in existing_course_codes:
+                continue
+
+            day_val = column_data_dict["Day"][i]
+            time_val = (
+                "8:30AM-11:30AM" if "8.30" in time_range[0] else "1:30PM-4:30PM"
+            )
+            suffix = "_Afternoon" if "_Afternoon" in time_key else ""
+
+            course_info = CourseEntry(
+                course_code=course_code,
+                coordinator=column_data_dict.get("Coordinator", [""] * (i + 1))[i]
+                or "",
+                time=time_val,
+                day=day_val or "",
+                campus=column_data_dict.get("Campus", [""] * (i + 1))[i] or "",
+                hrs=column_data_dict.get(f"Hours{suffix}", [""] * (i + 1))[i]
+                or "",
+                venue=column_data_dict.get(f"Venue{suffix}", [""] * (i + 1))[i]
+                or "",
+                invigilator=column_data_dict.get(
+                    f"Invigilators{suffix}", [""] * (i + 1)
+                )[i]
+                or "",
+                datetime_str=compute_datetime_str(day_val, time_val),
+            )
+
             courses.append(course_info)
             existing_course_codes.add(course_code)
         return courses

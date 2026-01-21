@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "timetable-scrapers"
+version = "0.1.0"
 description = "Package for scraping exams from TT for various institutions"
 readme = "README.md"
 requires-python = ">=3.8"
-author = [{name= "Samuel Ngigi", email = "ngigi.nyongo@gmail.com"}]
+authors = [{ name = "Samuel Ngigi", email = "ngigi.nyongo@gmail.com" }]
 keywords = ["timetable", "scraper", "excel", "parser"]
 
 dependencies = ["openpyxl>=3.0.0"]
@@ -21,12 +22,13 @@ dev = [
     "ruff>=0.1.0",
 ]
 
-[tool.setuptools]
-packages = ["timetable-scrapers"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["timetable_scrapers*"]
 
 [tool.black]
 line-length = 80
-targert-version = ['py38']
+target-version = ["py38"]
 
 [tool.mypy]
 python_version = "3.8"
