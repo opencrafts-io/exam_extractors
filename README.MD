@@ -67,6 +67,48 @@ courses = scraper.extract(file)
 course_dicts = [course.to_dict() for course in courses]
 ```
 
+### Professor API Integration
+
+To send scraped data to the Professor API, use `build_ingest_payload()` which creates contract-compliant payloads:
+
+```python
+from timetable_scrapers import ScraperRegistry, build_ingest_payload, get_institution_id
+
+# Extract data
+scraper = ScraperRegistry.get_scraper("nursing_exams")
+with open("timetable.xlsx", "rb") as f:
+    entries = scraper.extract(f)
+
+# Get stable institution ID
+institution_id = get_institution_id("nursing_exams")
+
+# Build contract-compliant payload
+payloads = build_ingest_payload(
+    institution_id=institution_id,
+    semester_id=12,
+    entries=entries,
+)
+
+# Send to Professor API
+import requests
+for payload in payloads:
+    response = requests.post(
+        "https://professor.example.com/api/exams/ingest/",
+        json=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer <token>"
+        }
+    )
+    print(f"Created: {response.json()['created']}, Updated: {response.json()['updated']}")
+```
+
+**Key features:**
+- Automatically parses structured `exam_date`, `start_time`, `end_time` from free-form `day`/`time` strings
+- Removes `datetime_str` from items (moves to `raw_data` if present)
+- Deduplicates entries by `(institution_id, semester_id, course_code)` with last-wins policy
+- Optionally chunks large batches: `build_ingest_payload(..., chunk_size=5000)`
+
 ## Architecture
 
 ### Package Structure
@@ -110,7 +152,7 @@ class NewInstitutionScraper(BaseTimetableScraper):
     @property
     def institution_name(self) -> str:
         return "new_institution"
-    
+
     def extract(self, file) -> List[CourseEntry]:
         # Your extraction logic here
         return []
