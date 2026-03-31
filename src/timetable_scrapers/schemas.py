@@ -12,6 +12,8 @@ class CourseEntry:
     course_code: str
     day: str = ""
     time: str = ""
+    start_time: str = ""
+    end_time: str = ""
     venue: str = ""
     campus: str = ""
     coordinator: str = ""
@@ -29,6 +31,8 @@ class CourseEntry:
             "course_code": self.course_code,
             "day": self.day,
             "time": self.time,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
             "venue": self.venue,
             "campus": self.campus,
             "coordinator": self.coordinator,
@@ -49,6 +53,8 @@ class CourseEntry:
             course_code=data.get("course_code", ""),
             day=data.get("day", ""),
             time=data.get("time", ""),
+            start_time=data.get("start_time", ""),
+            end_time=data.get("end_time", ""),
             venue=data.get("venue", ""),
             campus=data.get("campus", ""),
             coordinator=data.get("coordinator", ""),

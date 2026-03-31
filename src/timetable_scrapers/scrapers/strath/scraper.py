@@ -23,84 +23,101 @@ class StrathScraper(BaseTimetableScraper):
         """
         Extract timetable data from Strathmore Excel file.
         """
-        wb_obj = load_workbook(file)
-        sheet = wb_obj.active
+        wb_obj = load_workbook(file, data_only=True, read_only=True)
+        all_courses = []
 
-        current_date = ""
-        current_time = ""
-        current_course = ""
-        current_group = ""
-        current_number = ""
-        current_venue = ""
-        current_lecturer = ""
+        for sheet in wb_obj.worksheets:
+            col_map = {
+                "date": 0,
+                "time": 2,
+                "course": 5,
+                "group": 6,
+                "number": 7,
+                "venue": 8,
+                "lecturer": 9,
+            }
 
-        courses = []
+            header_row_idx = -1
 
-        for row_idx, row in enumerate(
-            sheet.iter_rows(values_only=True) if sheet else []
-        ):
-            if row_idx < 3:
+            # Try to find header row and detect columns
+            for row_idx, row in enumerate(sheet.iter_rows(values_only=True, max_row=10)):
+                row_vals = [str(cell).strip().lower() if cell else "" for cell in row]
+                if "time" in row_vals and any(word in "".join(row_vals) for word in ["course", "unit", "examination", "subject"]):
+                    header_row_idx = row_idx
+                    for i, val in enumerate(row_vals):
+                        val_str = str(val).lower()
+                        if "date" in val_str: col_map["date"] = i
+                        elif "time" in val_str: col_map["time"] = i
+                        elif any(kw in val_str for kw in ["unit", "course", "examination"]): col_map["course"] = i
+                        elif "group" in val_str: col_map["group"] = i
+                        elif "no" in val_str or "number" in val_str: col_map["number"] = i
+                        elif "venue" in val_str: col_map["venue"] = i
+                        elif any(kw in val_str for kw in ["invigilator", "lecturer"]): col_map["lecturer"] = i
+                    break
+
+            if header_row_idx == -1:
+                # If no header found, skip this sheet (might be instructions or empty)
                 continue
 
-            date_val = row[0] if len(row) > 0 else None
-            time_val = row[2] if len(row) > 2 else None
-            course_val = row[4] if len(row) > 4 else None
-            group_val = row[6] if len(row) > 6 else None
-            number_val = row[7] if len(row) > 7 else None
-            venue_val = row[8] if len(row) > 8 else None
-            lecturer_val = row[10] if len(row) > 10 else None
+            current_date = ""
+            current_time = ""
+            current_course = ""
+            current_group = ""
+            current_number = ""
+            current_venue = ""
+            current_lecturer = ""
 
-            if date_val and str(date_val).strip():
-                current_date = str(date_val).strip().rstrip(".")
-            if time_val and str(time_val).strip():
-                current_time = str(time_val).strip()
-            if course_val and str(course_val).strip():
-                current_course = str(course_val).strip()
-            if group_val and str(group_val).strip():
-                current_group = str(group_val).strip()
-            if number_val is not None:
-                current_number = str(number_val).strip()
-            if venue_val and str(venue_val).strip():
-                current_venue = str(venue_val).strip()
-            if lecturer_val and str(lecturer_val).strip():
-                current_lecturer = str(lecturer_val).strip()
+            start_row = header_row_idx + 1
 
-            if current_course and current_group and current_venue:
-                if (group_val and str(group_val).strip()) or (
-                    venue_val and str(venue_val).strip()
-                ):
-                    course_parts = current_course.split(":", 1)
-                    course_code = (
-                        course_parts[0].strip()
-                        if course_parts
-                        else current_course
-                    )
-                    course_name = (
-                        course_parts[1].strip() if len(course_parts) > 1 else ""
-                    )
+            for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+                if row_idx < start_row:
+                    continue
 
-                    formatted_time = self._format_strath_time(current_time)
+                if not any(row):
+                    continue
 
-                    course_info = CourseEntry(
-                        course_code=course_code,
-                        course_name=course_name,
-                        day=current_date,
-                        time=formatted_time,
-                        venue=current_venue,
-                        invigilator=current_lecturer,
-                        raw_data={
-                            "group": current_group,
-                            "student_count": current_number,
-                            "program": (
-                                current_group.split()[0]
-                                if current_group
-                                else ""
-                            ),
-                        },
-                    )
-                    courses.append(course_info)
+                def get_val(idx):
+                    return str(row[idx]).strip() if idx < len(row) and row[idx] is not None else ""
 
-        return self.normalize_output(courses)
+                date_val = get_val(col_map["date"])
+                time_val = get_val(col_map["time"])
+                course_val = get_val(col_map["course"])
+                group_val = get_val(col_map["group"])
+                number_val = get_val(col_map["number"])
+                venue_val = get_val(col_map["venue"])
+                lecturer_val = get_val(col_map["lecturer"])
+
+                if date_val: current_date = date_val.rstrip(".")
+                if time_val: current_time = time_val
+                if course_val: current_course = course_val
+                if group_val: current_group = group_val
+                if number_val: current_number = number_val
+                if venue_val: current_venue = venue_val
+                if lecturer_val: current_lecturer = lecturer_val
+
+                if current_course and current_group:
+                    if course_val or group_val or venue_val or lecturer_val:
+                        course_parts = current_course.split(":", 1)
+                        course_code = course_parts[0].strip() if course_parts else current_course
+                        course_name = course_parts[1].strip() if len(course_parts) > 1 else ""
+
+                        formatted_time = self._format_strath_time(current_time)
+
+                        all_courses.append(CourseEntry(
+                            course_code=course_code,
+                            course_name=course_name,
+                            day=current_date or "Unknown Date",
+                            time=formatted_time,
+                            venue=current_venue or "TBA",
+                            invigilator=current_lecturer,
+                            raw_data={
+                                "group": current_group,
+                                "student_count": current_number,
+                                "program": current_group.split()[0] if current_group else "",
+                            },
+                        ))
+
+        return self.normalize_output(all_courses)
 
     def _format_strath_time(self, time: str) -> str:
         """

@@ -27,9 +27,9 @@ ALLOWED_ITEM_KEYS = {
 
 INSTITUTION_ID_MAP: Dict[str, str] = {
     "kca": "123",
-    "strath": "456",
-    "nursing_exams": "789",
-    "school_exams": "789",
+    "strath": "5461",
+    "nursing_exams": "5426",
+    "school_exams": "5426",
 }
 
 

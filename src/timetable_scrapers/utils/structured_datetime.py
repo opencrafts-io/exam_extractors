@@ -191,3 +191,79 @@ def parse_time_range_24h(time_str: str) -> Tuple[Optional[str], Optional[str]]:
         pass
 
     return (None, None)
+
+
+def compute_datetime_str(day_str: str, time_str: str) -> Optional[str]:
+    """
+    Compute datetime_str in ISO format UTC from day and time strings.
+
+    Args:
+        day_str: Day string (e.g., "THURSDAY 30/04/26" or "Saturday 6th December 2025")
+        time_str: Time string (e.g., "5.45PM-8.45PM")
+
+    Returns:
+        ISO format datetime string (UTC) or None if parsing fails
+    """
+    date_iso = parse_exam_date(day_str)
+    if not date_iso:
+        return None
+
+    start_time_24h, _ = parse_time_range_24h(time_str)
+    if not start_time_24h:
+        return None
+
+    try:
+        # Construct ISO UTC string
+        dt_str = f"{date_iso}T{start_time_24h}:00Z"
+        datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ")
+        return dt_str
+    except ValueError:
+        return None
+
+
+def split_time_range(time_str: str) -> Tuple[str, str]:
+    """
+    Split a time range string into formatted start and end times.
+    Outputs in 24-hour format (HH:MM:SS) to satisfy API validation.
+
+    "9:00AM-11:00AM" -> ("09:00:00", "11:00:00")
+    "14:00-16:00" -> ("14:00:00", "16:00:00")
+    "2.30 - 4.30 pm" -> ("14:30:00", "16:30:00")
+
+    Args:
+        time_str: Time range string
+    Returns:
+        Tuple of (start_time, end_time) as formatted strings.
+    """
+    if not time_str:
+        return ("", "")
+
+    s = str(time_str).strip()
+    clean_time = re.sub(r"\bHRS?\b", "", s, flags=re.IGNORECASE).strip()
+    clean_time = re.sub(r"\s*-\s*", "-", clean_time)
+
+    if "-" not in clean_time:
+        dt = _parse_one_time(clean_time)
+        if dt:
+            return (dt.strftime("%H:%M:%S"), "")
+        return (clean_time, "")
+
+    parts = clean_time.split("-", 1)
+    start_part = parts[0].strip()
+    end_part = parts[1].strip()
+
+    start_dt = _parse_one_time(start_part)
+    end_dt = _parse_one_time(end_part)
+
+    # Handle AM/PM inference
+    if start_dt and end_dt:
+        if start_dt.hour <= 12 and end_dt.hour >= 12 and (end_dt.hour - start_dt.hour) > 6:
+            # likely start should also be PM
+            if not re.search(r"AM", start_part, flags=re.IGNORECASE):
+                if start_dt.hour < 12:
+                    start_dt = start_dt.replace(hour=start_dt.hour + 12)
+
+    start_res = start_dt.strftime("%H:%M:%S") if start_dt else start_part
+    end_res = end_dt.strftime("%H:%M:%S") if end_dt else end_part
+
+    return (start_res, end_res)

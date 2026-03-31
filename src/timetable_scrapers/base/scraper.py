@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import BinaryIO, List, Union
 
 from ..schemas import CourseEntry
+from ..utils.structured_datetime import compute_datetime_str, split_time_range
 
 
 class BaseTimetableScraper(ABC):
@@ -47,5 +48,15 @@ class BaseTimetableScraper(ABC):
         normalized = []
         for entry in entries:
             if self.validate_entry(entry):
+                if not entry.datetime_str and entry.day and entry.time:
+                    entry.datetime_str = compute_datetime_str(entry.day, entry.time)
+
+                if entry.time and (not entry.start_time or not entry.end_time):
+                    start, end = split_time_range(entry.time)
+                    if not entry.start_time:
+                        entry.start_time = start
+                    if not entry.end_time:
+                        entry.end_time = end
+
                 normalized.append(entry)
         return normalized
