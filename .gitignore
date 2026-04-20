@@ -1,13 +1,37 @@
 docs/
 uploads/
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
+
+*.json
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+
+# Build
 dist/
 build/
 *.egg-info/
+
+# Cache
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# Environment files
 .env
+.env.local
+
+# Test coverage
+htmlcov/
+.coverage

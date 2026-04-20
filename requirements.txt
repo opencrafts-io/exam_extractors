@@ -6,6 +6,5 @@ pip==24.0
 pluggy==1.6.0
 pygments==2.19.2
 pytest==9.0.2
--e file:///home/ngigi/Documents/crafts/exam_timetable_extractors
 uv==0.9.26
 xlrd==2.0.2

@@ -32,8 +32,8 @@ class NursingExamScraper(BaseTimetableScraper):
             "Invigilators",
             "Courses_Afternoon",
             "Hours_Afternoon",
-            "Invigilators_Afternoon",
             "Venue_Afternoon",
+            "Invigilators_Afternoon",
         ]
 
         wb_obj = load_workbook(file)
@@ -62,22 +62,29 @@ class NursingExamScraper(BaseTimetableScraper):
         Handles merged cells by carrying forward the last non-None value
         """
         column_data_dict = {}
+        no_carry_headers = {"Courses", "Courses_Afternoon"}
 
         for i, column in enumerate(
             sheet.iter_cols(values_only=True) if sheet else []
         ):
+            if i >= len(column_headers):
+                continue
+
+            header = column_headers[i]
             last_value = None
             column_data = []
+
             for cell in column:
                 if cell is not None:
                     last_value = cell
                     column_data.append(cell)
                 else:
-                    column_data.append(last_value)
+                    if header in no_carry_headers:
+                        column_data.append(None)
+                    else:
+                        column_data.append(last_value)
 
-            if any(cell is not None for cell in column_data):
-                if i < len(column_headers):
-                    column_data_dict[column_headers[i]] = column_data
+            column_data_dict[header] = column_data
 
         return column_data_dict
 
@@ -97,22 +104,27 @@ class NursingExamScraper(BaseTimetableScraper):
             List of CourseEntry objects
         """
         courses = []
-        existing_course_codes = set()
 
         if "Day" not in column_data_dict or time_key not in column_data_dict:
             return courses
 
-        for i in range(len(column_data_dict["Day"])):
+        # Skip the very first row if it contains headers
+        start_idx = 0
+        if column_data_dict["Day"] and str(column_data_dict["Day"][0]).lower() == "day":
+            start_idx = 1
+
+        for i in range(start_idx, len(column_data_dict["Day"])):
             raw_course_code = column_data_dict[time_key][i]
             if raw_course_code is None:
                 continue
 
             course_code = str(raw_course_code).strip()
-            if not course_code:
+            if not course_code or course_code.lower() == "none":
                 continue
-            if course_code in time_range:
+            if any(tr.lower() in course_code.lower() for tr in time_range):
                 continue
-            if course_code in existing_course_codes:
+
+            if course_code.upper() in ["COURSE", "COURSES", "DAY", "CAMPUS"]:
                 continue
 
             day_val = column_data_dict["Day"][i]
@@ -140,5 +152,4 @@ class NursingExamScraper(BaseTimetableScraper):
             )
 
             courses.append(course_info)
-            existing_course_codes.add(course_code)
         return courses
