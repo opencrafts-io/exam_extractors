@@ -1,22 +1,26 @@
 from typing import Any, Dict, List
-
 from openpyxl import load_workbook
 
 from ...base.scraper import BaseTimetableScraper
 from ...registry import ScraperRegistry
 from ...schemas import CourseEntry
-from ...utils.datetime_parser import compute_datetime_str
+from ...utils.time_parser import parse_exam_datetime
 
 
 @ScraperRegistry.register("nursing_exams")
 class NursingExamScraper(BaseTimetableScraper):
     """
-    Scraper for Daystar University Nursing timetable Format
+    Scraper for Daystar University Nursing timetable Format.
+    Matches the minimal Professor API contract.
     """
 
     @property
     def institution_name(self) -> str:
-        return "nursing_exams"
+        return "Daystar University Nursing School"
+
+    @property
+    def timezone(self) -> str:
+        return "EAT"  # East Africa Time
 
     def extract(self, file) -> List[CourseEntry]:
         """
@@ -43,12 +47,12 @@ class NursingExamScraper(BaseTimetableScraper):
         morning_exams = self._extract_course_info(
             column_data_dict,
             "Courses",
-            ["8.30AM-11.30AM", "8.30-11.30AM", "8.30-11.30 AM"],
+            "8:30AM", "11:30AM"
         )
         afternoon_exams = self._extract_course_info(
             column_data_dict,
             "Courses_Afternoon",
-            ["1.30PM-4.30PM", "1.30-4.30PM", "1.30-4.30 PM"],
+            "1:30PM", "4:30PM"
         )
 
         courses = morning_exams + afternoon_exams
@@ -59,7 +63,7 @@ class NursingExamScraper(BaseTimetableScraper):
     ) -> Dict[str, List[Any]]:
         """
         Read Excel columns and store data in dictionary.
-        Handles merged cells by carrying forward the last non-None value
+        Handles merged cells by carrying forward the last non-None value.
         """
         column_data_dict = {}
         no_carry_headers = {"Courses", "Courses_Afternoon"}
@@ -92,16 +96,11 @@ class NursingExamScraper(BaseTimetableScraper):
         self,
         column_data_dict: Dict[str, List[Any]],
         time_key: str,
-        time_range: List[str],
+        start_time_str: str,
+        end_time_str: str,
     ) -> List[CourseEntry]:
         """
-        Extract course information for a specific time slot (morning or afternoon)
-        Args:
-            column_data_dict: Dict mapping column headers to cell values
-            time_key: Keny for the course column (Courses or Courses_Afternoon)
-                time_range: Time range strings to exclude
-        Return:
-            List of CourseEntry objects
+        Extract course information for a specific time slot (morning or afternoon).
         """
         courses = []
 
@@ -121,34 +120,35 @@ class NursingExamScraper(BaseTimetableScraper):
             course_code = str(raw_course_code).strip()
             if not course_code or course_code.lower() == "none":
                 continue
-            if any(tr.lower() in course_code.lower() for tr in time_range):
+
+            if "8.30" in course_code.lower() or "1.30" in course_code.lower():
                 continue
 
             if course_code.upper() in ["COURSE", "COURSES", "DAY", "CAMPUS"]:
                 continue
 
-            day_val = column_data_dict["Day"][i]
-            time_val = (
-                "8:30AM-11:30AM" if "8.30" in time_range[0] else "1:30PM-4:30PM"
-            )
+            day_val = str(column_data_dict["Day"][i] or "")
             suffix = "_Afternoon" if "_Afternoon" in time_key else ""
+
+            start_time = parse_exam_datetime(day_val, start_time_str, self.timezone)
+            end_time = parse_exam_datetime(day_val, end_time_str, self.timezone)
+
+            if not start_time or not end_time:
+                self.logger.warning(f"Failed to parse datetime for {course_code} on {day_val}")
+                continue
 
             course_info = CourseEntry(
                 course_code=course_code,
-                coordinator=column_data_dict.get("Coordinator", [""] * (i + 1))[i]
-                or "",
-                time=time_val,
-                day=day_val or "",
-                campus=column_data_dict.get("Campus", [""] * (i + 1))[i] or "",
-                hrs=column_data_dict.get(f"Hours{suffix}", [""] * (i + 1))[i]
-                or "",
-                venue=column_data_dict.get(f"Venue{suffix}", [""] * (i + 1))[i]
-                or "",
-                invigilator=column_data_dict.get(
-                    f"Invigilators{suffix}", [""] * (i + 1)
-                )[i]
-                or "",
-                datetime_str=compute_datetime_str(day_val, time_val),
+                start_time=start_time,
+                end_time=end_time,
+                venue=str(column_data_dict.get(f"Venue{suffix}", [""] * (i + 1))[i] or "").strip(),
+                coordinator=str(column_data_dict.get("Coordinator", [""] * (i + 1))[i] or "").strip(),
+                hrs=str(column_data_dict.get(f"Hours{suffix}", [""] * (i + 1))[i] or "").strip(),
+                raw_data={
+                    "original_day": day_val,
+                    "campus": column_data_dict.get("Campus", [""] * (i + 1))[i],
+                    "invigilator": column_data_dict.get(f"Invigilators{suffix}", [""] * (i + 1))[i],
+                }
             )
 
             courses.append(course_info)

@@ -1,209 +1,135 @@
 # Timetable Scrapers
-Python package for scraping exam timetables.
+
+A lightweight, plugin-based Python package for scraping exam timetables and serving the **Academia.io Professor** feature. This tool provides the essential exam schedule data for the Academia mobile app.
 
 ## Overview
-This provides a plugin-based architecture for extracting timetable data from excel files.
-Each institution has its own implementation, ensuring maintanability and extensibility.
+
+This project extracts exam schedules from various institution formats (Excel, CSV, etc.) and transforms them into a minimal, standardized format required by the Professor API.
 
 ### Key Features
-- `Plugin Architecture`: Easy to add new institution scrapers.
-- `Standardized Output`: All scrapers return the samde data structure
-- `Type Safe`: Uses dataclassases and type hints
-- `Extensible`: Base class provides common functionality
-- `Independent`: Can be used in multiple projects
+- **Plugin Architecture**: Easily add new institution scrapers by inheriting from `BaseTimetableScraper`.
+- **Minimal Schema**: Strictly adheres to the essential fields required for mobile app consumption.
+- **ISO 8601 UTC**: All temporal data is normalized to UTC ISO 8601 strings.
 
-## Installation
-cd timetable-scrapers
+---
+
+## Quick Start for New Users
+
+If you are new to the project or have just forked it, follow these steps to run your own scripts and output JSON files.
+
+### 1. Installation
+
+Clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/your-username/exam_timetable_extractors.git
+cd exam_timetable_extractors
 pip install -e .
-pip install -e ".[dev]"
+```
 
-### Production (soon)
-pip install timetable-scrapers
+### 2. Running Scrapers
 
-## Usage
-
-### Basic Usage
+You can create a simple script to intake an Excel file and output a JSON file.
 
 ```python
+import json
 from timetable_scrapers import ScraperRegistry
 
-# Get a scraper instance
+# 1. Get the scraper for your institution
 scraper = ScraperRegistry.get_scraper("nursing_exams")
 
-# Extract data from file
-with open("timetable.xlsx", "rb") as f:
-    courses = scraper.extract(f)
+# 2. Extract data from the Excel file
+with open("path/to/your/timetable.xlsx", "rb") as f:
+    entries = scraper.extract(f)
 
-# courses is a list of CourseEntry objects
-for course in courses:
-    print(f"{course.course_code} at {course.venue} on {course.day}")
+# 3. Convert entries to dictionaries
+data = [entry.to_dict() for entry in entries]
+
+# 4. Save to JSON
+with open("output_timetable.json", "w") as f:
+    json.dump(data, f, indent=2)
+
+print(f"Successfully extracted {len(data)} exam entries.")
 ```
 
-### Available Scrapers
+### 3. Adding a New Institution Scraper
 
-- `nursing_exams`: Nursing exam timetable
-- `strath`: Strathmore University timetable
-- `kca`: KCA University exam timetable
-- `Daystar`: Daystar exam timetable
+To add a new institution:
+1. Create a new directory in `src/timetable_scrapers/scrapers/`.
+2. Create a `scraper.py` file.
+3. Inherit from `BaseTimetableScraper` and implement `extract`.
+4. Register it: `@ScraperRegistry.register("your_institution_id")`.
+5. Import it in `src/timetable_scrapers/scrapers/__init__.py`.
 
-### List Available Scrapers
+---
+
+## Professor API Data Contract
+
+All scrapers must output data matching this minimal contract.
+
+### Data Model (`CourseEntry`)
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `course_code` | string | ✓ | Course identifier (e.g., "CS101"). |
+| `start_time` | string | ✓ | ISO 8601 UTC datetime (e.g., "2026-04-28T08:00:00Z"). |
+| `end_time` | string | ✓ | ISO 8601 UTC datetime (e.g., "2026-04-28T10:00:00Z"). |
+| `venue` | string | ✓ | Exam venue/location. |
+| `coordinator` | string | ✗ | Optional: Exam coordinator name. |
+| `hrs` | string | ✗ | Optional: Duration (e.g., "2 hours"). |
+| `raw_data` | object | ✗ | Store all original/extra data here for auditing. |
+
+### Time Normalization
+
+The system uses `src/timetable_scrapers/utils/time_parser.py` to convert institution-specific date/time strings into UTC ISO 8601.
 
 ```python
-from timetable_scrapers import ScraperRegistry
+from timetable_scrapers.utils.time_parser import parse_exam_datetime
 
-available = ScraperRegistry.list_scrapers()
-print(available)  # ['nursing_exams', 'strath', 'kca', 'school_exams']
+# Converts local "28/04/2026" and "8:30AM" to UTC ISO string
+iso_time = parse_exam_datetime("28/04/2026", "8:30AM", timezone_str="EAT")
+# Result: "2026-04-28T05:30:00Z"
 ```
 
-### Converting to Dictionary
+---
+
+## Professor API Ingestion
+
+To ingest data into the Professor API:
 
 ```python
-from timetable_scrapers import ScraperRegistry, CourseEntry
+from timetable_scrapers import ScraperRegistry, build_ingest_payload, send_to_professor
 
-scraper = ScraperRegistry.get_scraper("kca")
-courses = scraper.extract(file)
-
-# Convert to dictionaries for JSON serialization
-course_dicts = [course.to_dict() for course in courses]
-```
-
-### Professor API Integration
-
-To send scraped data to the Professor API, use `build_ingest_payload()` which creates contract-compliant payloads:
-
-```python
-from timetable_scrapers import ScraperRegistry, build_ingest_payload, get_institution_id
-
-# Extract data
+# 1. Extract
 scraper = ScraperRegistry.get_scraper("nursing_exams")
 with open("timetable.xlsx", "rb") as f:
     entries = scraper.extract(f)
 
-# Get stable institution ID
-institution_id = get_institution_id("nursing_exams")
-
-# Build contract-compliant payload
+# 2. Build Payload
 payloads = build_ingest_payload(
-    institution_id=institution_id,
-    semester_id=12,
+    institution_id="nursing_school_001",
     entries=entries,
+    semester_id=12
 )
 
-# Send to Professor API
-import requests
-for payload in payloads:
-    response = requests.post(
-        "https://professor.example.com/api/exams/ingest/",
-        json=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer <token>"
-        }
-    )
-    print(f"Created: {response.json()['created']}, Updated: {response.json()['updated']}")
+# 3. Send to API
+results = send_to_professor(
+    payloads,
+    api_url="https://professor-api.example.com/exams/ingest/",
+    api_token="your_auth_token"
+)
 ```
 
-**Key features:**
-- Automatically parses structured `exam_date`, `start_time`, `end_time` from free-form `day`/`time` strings
-- Removes `datetime_str` from items (moves to `raw_data` if present)
-- Deduplicates entries by `(institution_id, semester_id, course_code)` with last-wins policy
-- Optionally chunks large batches: `build_ingest_payload(..., chunk_size=5000)`
+---
 
-## Architecture
-
-### Package Structure
-
-```
-timetable_scrapers/
-├── base/              # Base classes and interfaces
-├── utils/             # Shared utilities
-├── scrapers/          # Institution-specific scrapers
-│   ├── nursing/
-│   ├── strath/
-│   ├── kca/
-│   └── school/
-├── registry.py        # Scraper registry/factory
-└── schemas.py         # Data models
-```
-
-### Design Patterns
-
-- **Strategy Pattern**: Each institution is a strategy (scraper class)
-- **Factory Pattern**: Registry creates scraper instances
-- **Plugin Pattern**: Scrapers register themselves automatically
-
-### Adding a New Scraper
-
-1. Create a new directory under `scrapers/`
-2. Create scraper class inheriting from `BaseTimetableScraper`
-3. Implement `institution_name` property and `extract()` method
-4. Register with `@ScraperRegistry.register("name")`
-5. Import in `scrapers/__init__.py`
-
-Example:
-
-```python
-from ...base.scraper import BaseTimetableScraper
-from ...registry import ScraperRegistry
-from ...schemas import CourseEntry
-
-@ScraperRegistry.register("new_institution")
-class NewInstitutionScraper(BaseTimetableScraper):
-    @property
-    def institution_name(self) -> str:
-        return "new_institution"
-
-    def extract(self, file) -> List[CourseEntry]:
-        # Your extraction logic here
-        return []
-```
-
-## Data Structure
-
-All scrapers return `CourseEntry` objects with the following fields:
-
-- `course_code` (str): Course code (required)
-- `day` (str): Day/date string
-- `time` (str): Time string (e.g., "8:00AM-10:00AM")
-- `venue` (str): Venue/room name
-- `campus` (str): Campus name
-- `coordinator` (str): Coordinator name
-- `hrs` (str): Duration in hours
-- `invigilator` (str): Invigilator name
-- `datetime_str` (str, optional): ISO format datetime
-- `course_name` (str): Full course name
-- `raw_data` (dict): Institution-specific data
-
-## Development
+## Development & Testing
 
 ### Running Tests
-
 ```bash
 pytest tests/
 ```
 
-### Code Quality
-
+### Formatting
 ```bash
-# Format code
 black src/
-
-# Type checking
-mypy src/
-
-# Linting
-ruff check src/
 ```
-
-## License
-
-MIT
-
-## Contributing
-
-When adding a new institution scraper:
-
-1. Follow the existing scraper structure
-2. Implement all abstract methods
-3. Add tests for your scraper
-4. Update this README with the new scraper name

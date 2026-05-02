@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import BinaryIO, List, Union
+from typing import BinaryIO, List, Union, Optional
+import logging
 
 from ..schemas import CourseEntry
-from ..utils.structured_datetime import compute_datetime_str, split_time_range
+from ..utils.time_parser import validate_entry
 
 
 class BaseTimetableScraper(ABC):
@@ -10,6 +11,9 @@ class BaseTimetableScraper(ABC):
     Abstract base class for all timetable scrapers.
     All scrapers must inherit from this class and implement the abstract methods.
     """
+
+    def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @property
     @abstractmethod
@@ -19,6 +23,14 @@ class BaseTimetableScraper(ABC):
         Used for registration in a registry
         """
         pass
+
+    @property
+    def timezone(self) -> str:
+        """
+        Institution's timezone for time conversion.
+        Defaults to UTC. Override in subclasses.
+        """
+        return "UTC"
 
     @abstractmethod
     def extract(self, file: Union[BinaryIO, str]) -> List[CourseEntry]:
@@ -37,26 +49,14 @@ class BaseTimetableScraper(ABC):
         """
         Validate Course entry
         """
-        if not entry.course_code or not entry.course_code.strip():
-            return False
-        return True
+        is_valid, error = validate_entry(entry)
+        if not is_valid:
+            self.logger.warning(f"Invalid entry for {entry.course_code}: {error}")
+        return is_valid
 
+    # very expensive method call :(
     def normalize_output(self, entries: List[CourseEntry]) -> List[CourseEntry]:
         """
-        Applies validation and any normalization
+        Applies validation and any normalization.
         """
-        normalized = []
-        for entry in entries:
-            if self.validate_entry(entry):
-                if not entry.datetime_str and entry.day and entry.time:
-                    entry.datetime_str = compute_datetime_str(entry.day, entry.time)
-
-                if entry.time and (not entry.start_time or not entry.end_time):
-                    start, end = split_time_range(entry.time)
-                    if not entry.start_time:
-                        entry.start_time = start
-                    if not entry.end_time:
-                        entry.end_time = end
-
-                normalized.append(entry)
-        return normalized
+        return [entry for entry in entries if self.validate_entry(entry)]

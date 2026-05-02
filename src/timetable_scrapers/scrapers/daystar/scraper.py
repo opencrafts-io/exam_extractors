@@ -1,24 +1,28 @@
 from datetime import datetime
 from typing import List
-
 from openpyxl import load_workbook
 
 from ...base.scraper import BaseTimetableScraper
 from ...registry import ScraperRegistry
 from ...schemas import CourseEntry
+from ...utils.time_parser import parse_exam_datetime
 
 
 @ScraperRegistry.register("school_exams")
 class SchoolExamScraper(BaseTimetableScraper):
     """
-    Scraper for Daystar Univesity Exams
-
+    Scraper for Daystar University Exams.
+    Matches the minimal Professor API contract.
     Handles multiple worksheets, each with room information in the first column.
     """
 
     @property
     def institution_name(self) -> str:
-        return "school_exams"
+        return "Daystar University"
+
+    @property
+    def timezone(self) -> str:
+        return "EAT"  # East Africa Time
 
     def extract(self, file) -> List[CourseEntry]:
         """Extract exam timetable data from school Excel file."""
@@ -50,9 +54,8 @@ class SchoolExamScraper(BaseTimetableScraper):
             data_columns = list(work_sheet.iter_cols(values_only=True))[1:]
 
             day = ""
-            course_time = ""
+            course_time_range = ""
             course_code = ""
-            hours = "2"
 
             for column in data_columns:
                 for idx, value in enumerate(column):
@@ -63,14 +66,10 @@ class SchoolExamScraper(BaseTimetableScraper):
                         continue
 
                     if isinstance(value, datetime):
-                        day = (
-                            days_of_the_week[value.weekday()]
-                            + " "
-                            + str(value.date()).replace("-", "/")
-                        )
+                        day = value.strftime("%Y-%m-%d")
                     elif (
                         isinstance(value, str)
-                        and value.split(" ")[0] in days_of_the_week
+                        and any(d in value.upper() for d in days_of_the_week)
                     ):
                         day = value
 
@@ -79,62 +78,32 @@ class SchoolExamScraper(BaseTimetableScraper):
                         and len(value) > 0
                         and value[0].isdigit()
                     ):
-                        course_time = value.strip()
-                        if "-" in course_time:
-                            start_time = course_time.split("-")[0]
-                            end_time = course_time.split("-")[1]
-                            hours = self._time_difference(start_time, end_time)
-                        else:
-                            hours = "2"
+                        course_time_range = value.strip()
                     elif isinstance(value, str):
                         course_code = value
-                        hours_str = "2"
-                        if hours and len(hours) > 0:
-                            hours_str = "2" if hours[0] == "-" else str(hours)
+
+                        # Parse time range and create entry
+                        start_iso = ""
+                        end_iso = ""
+                        if "-" in course_time_range:
+                            time_parts = course_time_range.split("-", 1)
+                            start_iso = parse_exam_datetime(day, time_parts[0].strip(), self.timezone)
+                            end_iso = parse_exam_datetime(day, time_parts[1].strip(), self.timezone)
+
+                        if not start_iso or not end_iso:
+                            continue
+
                         courses.append(
                             CourseEntry(
                                 course_code=course_code,
-                                day=day,
-                                time=course_time,
-                                venue=rooms.get(f"{idx}", ""),
-                                campus="",
-                                coordinator="",
-                                hrs=hours_str,
-                                invigilator="",
-                                datetime_str=None,
+                                start_time=start_iso,
+                                end_time=end_iso,
+                                venue=str(rooms.get(f"{idx}", "")).strip() or "TBA",
+                                raw_data={
+                                    "original_day": day,
+                                    "original_time": course_time_range,
+                                }
                             )
                         )
 
         return self.normalize_output(courses)
-
-    def _time_difference(self, start_time: str, end_time: str) -> str:
-        """
-        Returns the difference in hrs between two time intervals.
-        Defaults to "2" on parsing failure.
-        """
-        start_time = start_time.strip()
-        end_time = end_time.strip()
-
-        formats = ["%I:%M%p", "%H:%M", "%I:%M %p", "%H:%M "]
-        start_dt = None
-        end_dt = None
-
-        for fmt in formats:
-            try:
-                start_dt = datetime.strptime(start_time, fmt)
-                break
-            except ValueError:
-                continue
-
-        for fmt in formats:
-            try:
-                end_dt = datetime.strptime(end_time, fmt)
-                break
-            except ValueError:
-                continue
-
-        if start_dt is None or end_dt is None:
-            return "2"
-
-        hrs = (end_dt - start_dt).total_seconds() / 3600
-        return str(hrs)
