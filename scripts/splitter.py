@@ -4,8 +4,13 @@ import math
 with open("final_april_2026_v2.json", "r") as f:
     data = json.load(f)
 
-institution_id = data["institution_id"]
-items = data["items"]
+if isinstance(data, list):
+    items = data
+    institution_id = "5426"  # Default for school_exams based on professor_contract.py
+    print("Notice: Input file is a simple list. Wrapping with default institution_id.")
+else:
+    institution_id = data.get("institution_id", "")
+    items = data.get("items", [])
 
 # Calculate chunk size
 num_splits = 3

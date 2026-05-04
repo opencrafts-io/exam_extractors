@@ -11,7 +11,7 @@ INSTITUTION_ID_MAP: Dict[str, str] = {
     "strath": "5461",
     "nursing_exams": "5426",
     "school_exams": "5426",
-    "daystar": "5426",  # Placeholder
+    "daystar": "5426",
 }
 
 
